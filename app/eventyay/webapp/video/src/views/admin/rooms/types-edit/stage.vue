@@ -312,28 +312,30 @@ export default defineComponent({
 				return
 			}
 			if (!this.showPluginLanguageStreams) {
+				this._lastFetchRoomId = null
 				this.syncStatus = 'unsupported'
 				return
 			}
 			if (!this.roomId || this._lastFetchRoomId === this.roomId) return
-			
-			this._lastFetchRoomId = this.roomId
+
+			const fetchingRoomId = this.roomId
 			this.syncStatus = 'loading'
 			this.interpretationPutError = null
-			
+
 			try {
-				const baseUrl = this.getApiBaseUrl(this.roomId).replace('/stream-schedules/', '/interpretation/config/')
+				const baseUrl = this.getApiBaseUrl(fetchingRoomId).replace('/stream-schedules/', '/interpretation/config/')
 				const response = await fetch(baseUrl, {
 					headers: { Accept: 'application/json' },
 					credentials: 'include',
 					cache: 'no-store'
 				})
-				
+
 				if (!response.ok) {
+					this._lastFetchRoomId = null
 					this.syncStatus = 'unsupported'
 					return
 				}
-				
+
 				const data = await response.json()
 				if (data.ui_sync_supported) {
 					this.interpretationConfig = {
@@ -341,12 +343,15 @@ export default defineComponent({
 						interpreter: data.interpreter === 'none' ? '' : (data.interpreter || '')
 					}
 					this.availableInterpreters = (data.available_interpreters || []).filter(p => p.id !== 'none' && p.configured && !p.is_disconnected)
+					this._lastFetchRoomId = fetchingRoomId
 					this.syncStatus = 'ready'
 				} else {
+					this._lastFetchRoomId = null
 					this.syncStatus = 'unsupported'
 				}
 			} catch (err) {
 				console.warn('Failed to fetch interpretation config:', err)
+				this._lastFetchRoomId = null
 				this.syncStatus = 'unsupported'
 			}
 		},
