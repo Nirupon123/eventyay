@@ -143,11 +143,56 @@
 				i.mdi.mdi-plus(aria-hidden="true")
 				span {{ $t('Add scheduled streams') }}
 
-		.interpretation-plugin-language-streams(v-if="roomId && showPluginLanguageStreams")
+		.tool-section(v-if="!creating && showPluginLanguageStreams && syncStatus === 'loading'")
+			.tool-section-header
+				h3 {{ $t('Caption settings') }}
+			bunt-progress-circular(size="small")
+
+		.tool-section(v-if="isInterpretationFeatureAvailable")
+			.tool-section-header
+				h3 {{ $t('Caption settings') }}
+				p.subtitle {{ $t('Live translations and transcripts are provided by the eventyay-interpretation plugin.') }}
+			.fields-grid
+				bunt-switch(
+					name="room_enabled"
+					v-model="interpretationConfig.room_enabled"
+					:label="$t('Enable interpretation for this room')"
+				)
+				.field-group(v-if="interpretationConfig.room_enabled")
+					label.field-label
+						| {{ $t('Interpretation Provider') }}
+						span.required-star *
+					.custom-interpreter-select
+						select.interpreter-select(v-model="interpretationConfig.interpreter", :class="{'has-error': interpretationPutError}")
+							option(value="" disabled hidden) {{ $t('Select a provider') }}
+							option(v-for="provider in availableInterpreters" :key="provider.id" :value="provider.id") {{ provider.label }}
+						i.mdi.mdi-chevron-down.dropdown-arrow(aria-hidden="true")
+					.field-error(v-if="interpretationPutError") {{ interpretationPutError }}
+			.info-alert(v-if="interpretationConfig.room_enabled")
+				i.mdi.mdi-information(aria-hidden="true")
+				span
+					| {{ $t('Note: To manage advanced settings like LLM choices, API key management, and streaming languages, visit the') }} 
+					a(
+						:href="interpretationSettingsUrl"
+					) {{ $t('Interpretation Plugin Settings') }}
+					| .
+
+		.interpretation-plugin-language-streams(v-if="showPluginLanguageStreams && isInterpretationFeatureAvailable")
 			LanguageAudioSourceList(
-				:title="$t('Interpretation source')"
+				v-if="interpretationConfig.room_enabled && interpretationConfig.interpreter === 'voxbento'"
+				:title="$t('Interpretation channels')"
 				:entries="pluginLanguageStreamEntries"
 			)
+			.tool-section.skeleton-provider-layout(v-else-if="interpretationConfig.room_enabled && interpretationConfig.interpreter && interpretationConfig.interpreter !== 'voxbento' && interpretationConfig.interpreter !== 'none'")
+				.tool-section-header
+					h3 {{ $t('Interpretation channels') }}
+					p.subtitle {{ $t('Configuration layout is specific to the selected service.') }}
+				.skeleton-ui
+					.skeleton-box
+					.skeleton-box.short
+					.skeleton-box
+			.new-room-hint(v-if="creating")
+				| {{ $t('Please save the room first to configure interpretation features.') }}
 
 		.global-stream-error(v-if="globalError")
 			| {{ globalError }}
@@ -196,9 +241,32 @@ export default defineComponent({
 			globalError: null,
 			validationErrors: {},
 			deletingStreamIndex: null,
+			syncStatus: 'loading',
+			interpretationConfig: { room_enabled: false, interpreter: '' },
+			availableInterpreters: [],
+			interpretationPutError: null,
+			_lastFetchRoomId: null,
 		}
 	},
 	computed: {
+		interpretationSettingsUrl() {
+			const world = this.$store.state.world
+			let organizer = world?.organizer_slug || world?.organizer
+			let event = world?.slug || world?.id
+			
+			if (!organizer || organizer === 'default') {
+				const pathParts = window.location.pathname.split('/').filter(Boolean)
+				const eventIndex = pathParts.indexOf('event')
+				if (eventIndex !== -1 && pathParts.length > eventIndex + 2) {
+					organizer = pathParts[eventIndex + 1]
+					event = pathParts[eventIndex + 2]
+				} else if (pathParts.length >= 2) {
+					organizer = pathParts[0]
+					event = pathParts[1]
+				}
+			}
+			return `/common/event/${organizer}/${event}/interpretation/rooms/`
+		},
 		roomId() {
 			return this.config?.id ? String(this.config.id) : null
 		},
@@ -211,6 +279,9 @@ export default defineComponent({
 		showPluginLanguageStreams() {
 			return Boolean(this.config?.interpretation_use_plugin_streams)
 		},
+		isInterpretationFeatureAvailable() {
+			return !this.creating && this.syncStatus === 'ready' && this.availableInterpreters.length > 0
+		},
 		pluginLanguageStreamEntries() {
 			return this.interpretationAdmin?.languageStreams ?? []
 		},
@@ -218,7 +289,106 @@ export default defineComponent({
 	created() {
 		this.initStreams()
 	},
+	watch: {
+		showPluginLanguageStreams: {
+			immediate: true,
+			handler() {
+				this.fetchInterpretationConfig()
+			}
+		},
+		roomId: {
+			immediate: true,
+			handler() {
+				this.fetchInterpretationConfig()
+			}
+		}
+	},
 	methods: {
+		async fetchInterpretationConfig() {
+			if (this.creating) {
+				this.syncStatus = 'unsupported'
+				return
+			}
+			if (!this.showPluginLanguageStreams) {
+				this.syncStatus = 'unsupported'
+				return
+			}
+			if (!this.roomId || this._lastFetchRoomId === this.roomId) return
+			
+			this._lastFetchRoomId = this.roomId
+			this.syncStatus = 'loading'
+			this.interpretationPutError = null
+			
+			try {
+				const baseUrl = this.getApiBaseUrl(this.roomId).replace('/stream-schedules/', '/interpretation/config/')
+				const response = await fetch(baseUrl, {
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+					cache: 'no-store'
+				})
+				
+				if (!response.ok) {
+					this.syncStatus = 'unsupported'
+					return
+				}
+				
+				const data = await response.json()
+				if (data.ui_sync_supported) {
+					this.interpretationConfig = {
+						room_enabled: data.room_enabled,
+						interpreter: data.interpreter === 'none' ? '' : (data.interpreter || '')
+					}
+					this.availableInterpreters = (data.available_interpreters || []).filter(p => p.id !== 'none' && p.configured && !p.is_disconnected)
+					this.syncStatus = 'ready'
+				} else {
+					this.syncStatus = 'unsupported'
+				}
+			} catch (err) {
+				console.warn('Failed to fetch interpretation config:', err)
+				this.syncStatus = 'unsupported'
+			}
+		},
+		async saveInterpretationConfig(targetRoomId) {
+			if (this.syncStatus !== 'ready') return
+			
+			const roomId = targetRoomId || this.roomId
+			if (!roomId) return
+			
+			this.interpretationPutError = null
+			const baseUrl = this.getApiBaseUrl(roomId).replace('/stream-schedules/', '/interpretation/config/')
+			const csrfToken = this.getCsrfToken()
+			const headers = {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			}
+			if (csrfToken) headers['X-CSRFToken'] = csrfToken
+			
+			const payload = {
+				room_enabled: this.interpretationConfig.room_enabled,
+				interpreter: this.interpretationConfig.interpreter
+			}
+			
+			try {
+				const res = await fetch(baseUrl, {
+					method: 'PATCH',
+					headers,
+					body: JSON.stringify(payload),
+					credentials: 'include'
+				})
+				
+				if (!res.ok) {
+					const data = await res.json().catch(() => ({}))
+					this.interpretationPutError = data.detail || `Failed to save captioning settings: ${res.statusText}`
+					throw new Error(this.interpretationPutError)
+				}
+			} catch (err) {
+				console.error('saveInterpretationConfig failed:', err)
+				if (!this.interpretationPutError) {
+					this.interpretationPutError = err.message || err
+				}
+				throw err
+			}
+		},
 		providerIcon(streamType) {
 			if (streamType === STREAM_TYPE_YOUTUBE) return 'mdi-youtube'
 			if (streamType === STREAM_TYPE_VIMEO) return 'mdi-vimeo'
@@ -540,6 +710,15 @@ export default defineComponent({
 					}
 				}
 			})
+
+			if (this.syncStatus === 'ready') {
+				if (this.interpretationConfig.room_enabled && (!this.interpretationConfig.interpreter || this.interpretationConfig.interpreter === 'none')) {
+					this.interpretationPutError = this.$t('An interpreter must be selected to enable interpretation for this room.')
+					isValid = false
+				} else {
+					this.interpretationPutError = null
+				}
+			}
 
 			// Check for schedule overlaps in scheduled mode
 			if (this.isScheduledMode && isValid) {
@@ -1071,10 +1250,117 @@ export default defineComponent({
 			align-items: center
 			gap: 6px
 
+	.tool-section
+		margin-top: 24px
+		padding: 16px
+		background: #ffffff
+		border: 1px solid $clr-grey-200
+		border-radius: 8px
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04)
+		.tool-section-header
+			margin-bottom: 16px
+			h3
+				font-size: 16px
+				font-weight: 600
+				color: $clr-grey-900
+				margin: 0
+			.subtitle
+				font-size: 13px
+				color: $clr-secondary-text-light
+				margin: 4px 0 0 0
+		.fields-grid
+			display: grid
+			grid-template-columns: 1fr
+			gap: 16px
+			margin-top: 16px
+
+		.field-group
+			display: flex
+			flex-direction: column
+			gap: 6px
+
+		.field-label
+			font-size: 13px
+			font-weight: 500
+			color: $clr-grey-800
+			.required-star
+				color: $clr-danger
+				margin-left: 4px
+
+		.custom-interpreter-select
+			position: relative
+			display: flex
+			align-items: center
+			width: 100%
+			max-width: 400px
+
+			.interpreter-select
+				width: 100%
+				height: 36px
+				padding: 0 32px 0 12px
+				font-size: 14px
+				color: $clr-grey-900
+				background-color: #fff
+				border: 1px solid $clr-grey-300
+				border-radius: 4px
+				appearance: none
+				-webkit-appearance: none
+				-moz-appearance: none
+				outline: none
+				transition: border-color 0.2s ease
+				cursor: pointer
+				&:hover
+					border-color: $clr-grey-400
+				&:focus
+					border-color: var(--clr-primary)
+					box-shadow: 0 0 0 2px rgba($clr-primary, 0.2)
+				&.has-error
+					border-color: $clr-danger
+
+			.dropdown-arrow
+				position: absolute
+				right: 12px
+				font-size: 18px
+				color: $clr-grey-500
+				pointer-events: none
+
+		.field-error
+			font-size: 12px
+			color: $clr-danger
+			margin-top: 4px
+
+		.info-alert
+			display: flex
+			align-items: flex-start
+			gap: 8px
+			margin-top: 16px
+			padding: 12px
+			background-color: rgba($clr-primary, 0.05)
+			border-radius: 6px
+			color: $clr-grey-800
+			font-size: 13px
+			line-height: 1.4
+			i
+				color: var(--clr-primary)
+				font-size: 18px
+				margin-top: -2px
+			a
+				color: var(--clr-primary)
+				font-weight: 500
+				text-decoration: underline
+				&:hover
+					color: darken(#bb0011, 15%)
+	
 	.interpretation-plugin-language-streams
 		margin-top: 24px
 		padding-top: 16px
 		border-top: 1px solid $clr-grey-300
+		
+		.new-room-hint
+			font-size: 13px
+			color: $clr-secondary-text-light
+			font-style: italic
+			padding: 12px 0
 
 	.global-stream-error
 		color: $clr-danger
@@ -1105,4 +1391,26 @@ export default defineComponent({
 				background-color: $clr-danger !important
 			.btn-cancel
 				themed-button-secondary()
+
+	.skeleton-provider-layout
+		.skeleton-ui
+			display: flex
+			flex-direction: column
+			gap: 12px
+			margin-top: 16px
+			.skeleton-box
+				height: 48px
+				background: $clr-grey-100
+				border-radius: 4px
+				animation: skeleton-pulse 1.5s infinite ease-in-out
+				&.short
+					width: 60%
+
+@keyframes skeleton-pulse
+	0%
+		opacity: 1
+	50%
+		opacity: 0.5
+	100%
+		opacity: 1
 </style>
