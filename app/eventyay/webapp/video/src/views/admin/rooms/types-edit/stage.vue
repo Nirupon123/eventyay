@@ -163,11 +163,13 @@
 						| {{ $t('Interpretation Provider') }}
 						span.required-star *
 					.custom-interpreter-select
-						select.interpreter-select(v-model="interpretationConfig.interpreter", :class="{'has-error': interpretationPutError}")
-							option(value="" disabled hidden) {{ $t('Select a provider') }}
+						select.interpreter-select(v-model="interpretationConfig.interpreter", :class="{'has-error': interpretationPutError || availableInterpreters.length === 0}", :disabled="availableInterpreters.length === 0")
+							option(v-if="availableInterpreters.length === 0" value="" disabled hidden) {{ $t('No providers connected') }}
+							option(v-else value="" disabled hidden) {{ $t('Select a provider') }}
 							option(v-for="provider in availableInterpreters" :key="provider.id" :value="provider.id") {{ provider.label }}
 						i.mdi.mdi-chevron-down.dropdown-arrow(aria-hidden="true")
 					.field-error(v-if="interpretationPutError") {{ interpretationPutError }}
+					.field-error(v-else-if="availableInterpreters.length === 0") {{ $t('No interpretation providers are currently connected to this event. Please connect one in the Plugin Settings first.') }}
 			.info-alert(v-if="interpretationConfig.room_enabled")
 				i.mdi.mdi-information(aria-hidden="true")
 				span
@@ -280,7 +282,7 @@ export default defineComponent({
 			return Boolean(this.config?.interpretation_use_plugin_streams)
 		},
 		isInterpretationFeatureAvailable() {
-			return !this.creating && this.syncStatus === 'ready' && this.availableInterpreters.length > 0
+			return !this.creating && this.syncStatus === 'ready'
 		},
 		pluginLanguageStreamEntries() {
 			return this.interpretationAdmin?.languageStreams ?? []
@@ -712,8 +714,13 @@ export default defineComponent({
 			})
 
 			if (this.syncStatus === 'ready') {
-				if (this.interpretationConfig.room_enabled && (!this.interpretationConfig.interpreter || this.interpretationConfig.interpreter === 'none')) {
+				const interpreter = this.interpretationConfig.interpreter
+				const validIds = this.availableInterpreters.map(p => p.id)
+				if (this.interpretationConfig.room_enabled && (!interpreter || interpreter === 'none')) {
 					this.interpretationPutError = this.$t('An interpreter must be selected to enable interpretation for this room.')
+					isValid = false
+				} else if (this.interpretationConfig.room_enabled && interpreter && !validIds.includes(interpreter)) {
+					this.interpretationPutError = this.$t('The selected provider is no longer available. Please choose a connected provider or disable interpretation.')
 					isValid = false
 				} else {
 					this.interpretationPutError = null
