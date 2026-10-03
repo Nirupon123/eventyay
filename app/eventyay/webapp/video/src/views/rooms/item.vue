@@ -13,7 +13,7 @@
 				reactions-overlay(v-if="hasLivestream")
 				upcoming-stream-countdown(:room="room")
 		.stage-tool-blocker(v-if="activeStageTool !== null", @click="activeStageTool = null")
-		.stage-captions-dock(v-if="hasLivestream", :class="{open: ccEnabled}")
+		.stage-captions-dock(v-if="hasLivestream && isInterpretationEnabled", :class="{open: ccEnabled}")
 			.docked-captions-card
 				.captions-header
 					.header-left

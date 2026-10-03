@@ -193,8 +193,8 @@
 					.skeleton-box
 					.skeleton-box.short
 					.skeleton-box
-			.new-room-hint(v-if="creating")
-				| {{ $t('Please save the room first to configure interpretation features.') }}
+		.new-room-hint(v-if="creating && showPluginLanguageStreams")
+			| {{ $t('Please save the room first to configure interpretation features.') }}
 
 		.global-stream-error(v-if="globalError")
 			| {{ globalError }}
@@ -212,6 +212,7 @@
 import { defineComponent, reactive } from 'vue'
 import moment from 'moment-timezone'
 import api from 'lib/api'
+import { interpretationApiUrl, interpretationAuthHeaders } from 'lib/interpretation-api'
 import { logOperational } from 'lib/operationalLog'
 import Prompt from 'components/Prompt'
 import LanguageAudioSourceList from 'components/LanguageAudioSourceList'
@@ -323,11 +324,12 @@ export default defineComponent({
 			this.interpretationPutError = null
 
 			try {
-				const baseUrl = this.getApiBaseUrl(fetchingRoomId).replace('/stream-schedules/', '/interpretation/config/')
-				const response = await fetch(baseUrl, {
-					headers: { Accept: 'application/json' },
+				const url = interpretationApiUrl(this.$store, fetchingRoomId, 'config/')
+				const headers = await interpretationAuthHeaders()
+				headers['Cache-Control'] = 'no-store'
+				const response = await fetch(url, {
+					headers,
 					credentials: 'include',
-					cache: 'no-store'
 				})
 
 				if (!response.ok) {
@@ -335,6 +337,9 @@ export default defineComponent({
 					this.syncStatus = 'unsupported'
 					return
 				}
+
+				// discard response if the user navigated to a different room mid-flight
+				if (fetchingRoomId !== this.roomId) return
 
 				const data = await response.json()
 				if (data.ui_sync_supported) {
@@ -357,18 +362,13 @@ export default defineComponent({
 		},
 		async saveInterpretationConfig(targetRoomId) {
 			if (this.syncStatus !== 'ready') return
-			
+
 			const roomId = targetRoomId || this.roomId
 			if (!roomId) return
-			
+
 			this.interpretationPutError = null
-			const baseUrl = this.getApiBaseUrl(roomId).replace('/stream-schedules/', '/interpretation/config/')
-			const csrfToken = this.getCsrfToken()
-			const headers = {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			}
-			if (csrfToken) headers['X-CSRFToken'] = csrfToken
+			const url = interpretationApiUrl(this.$store, roomId, 'config/')
+			const headers = await interpretationAuthHeaders(true)
 			
 			const payload = {
 				room_enabled: this.interpretationConfig.room_enabled,
@@ -376,7 +376,7 @@ export default defineComponent({
 			}
 			
 			try {
-				const res = await fetch(baseUrl, {
+				const res = await fetch(url, {
 					method: 'PATCH',
 					headers,
 					body: JSON.stringify(payload),
