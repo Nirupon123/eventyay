@@ -341,6 +341,9 @@ export default defineComponent({
 				// discard response if the user navigated to a different room mid-flight
 				if (fetchingRoomId !== this.roomId) return
 
+				// discard if plugin streams were disabled while the request was in-flight
+				if (!this.showPluginLanguageStreams) return
+
 				const data = await response.json()
 				if (data.ui_sync_supported) {
 					this.interpretationConfig = {
