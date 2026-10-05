@@ -638,6 +638,7 @@ export default {
 			min-height: 0
 			height: auto
 			display: flex
+			flex-wrap: wrap
 			align-items: flex-start
 			justify-content: space-between
 			width: 100%
@@ -675,32 +676,17 @@ export default {
 				box-sizing: border-box
 
 			.captions-section
-				display: grid
-				grid-template-columns: auto 1fr
+				display: flex
 				align-items: center
-				column-gap: 6px
-				row-gap: 4px
-				.stage-tool.cc-toggle
-					grid-column: 1
-					grid-row: 1
-				.caption-size-stepper
-					grid-column: 2
-					grid-row: 1
-					justify-self: stretch
-					width: 100%
-					justify-content: space-between
-				.lang-wrapper
-					grid-column: 1 / -1
-					grid-row: 2
-					width: 100%
+				gap: 6px
+				flex-wrap: wrap
 
 			.lang-wrapper,
 			.dropdown-wrapper
 				display: flex
 				align-items: center
 				gap: 4px
-				min-width: 0
-				width: 100%
+				min-width: 150px
 				color: var(--clr-text-secondary, #64748b)
 				.mdi
 					font-size: 16px
@@ -709,7 +695,6 @@ export default {
 				.c-audio-translation
 					flex: 1
 					min-width: 0
-					width: 100%
 					.field-shell
 						width: 100%
 						border: none !important
@@ -1158,7 +1143,7 @@ export default {
 				gap: 8px
 				.stage-tools-left
 					min-width: 148px
-					max-width: calc(100% - 172px)
+					max-width: 100%
 				.stage-tool.cc-toggle
 					padding: 0
 					width: 26px
