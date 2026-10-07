@@ -55,6 +55,12 @@
 				.card-details
 					.card-title {{ $t('Rooms & Stages') }}
 					.card-desc {{ $t('Create, configure and manage video rooms') }}
+			a.action-card(:href="interpretationUrl", v-if="(hasPermission('world:update') || isAdminMode) && isInterpretationEnabled")
+				.card-icon
+					i.mdi.mdi-translate
+				.card-details
+					.card-title {{ $t('Interpretation') }}
+					.card-desc {{ $t('A plugin for live interpretation of video streams') }}
 			router-link.action-card(:to="{name: 'admin:announcements'}", v-if="(hasPermission('world:announce') || isAdminMode) && Boolean(liveFeatures.announcements)")
 				.card-icon
 					i.mdi.mdi-bullhorn
@@ -192,6 +198,15 @@ export default {
 		},
 		homeUrl() {
 			return window.eventyay?.homeUrl || null
+		},
+		interpretationUrl() {
+			if (window.eventyay?.homeUrl) {
+				return window.eventyay.homeUrl + 'interpretation/'
+			}
+			return '#'
+		},
+		isInterpretationEnabled() {
+			return window.eventyay?.plugins?.includes('interpretation') || false
 		},
 		ticketUrl() {
 			return window.eventyay?.ticketUrl || null

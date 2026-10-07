@@ -65,6 +65,12 @@ aside.c-organiser-sidebar(
 								span.mdi.mdi-plus(aria-hidden="true")
 								span {{ $t('New Room') }}
 
+				//- Interpretation
+				li(v-if="(hasPermission('world:update') || isAdminMode) && isInterpretationEnabled")
+					a.nav-link(:href="interpretationUrl", @click="onNavClick")
+						span.fa.mdi.mdi-translate(aria-hidden="true")
+						span.sidebar-text {{ $t('Interpretation') }}
+
 				//- 3. Chat rooms (collapsible, hidden if chat_rooms is disabled)
 				li.nav-fold(v-if="(hasPermission('room:update') || hasPermission('world:rooms.create.chat') || isAdminMode) && liveFeatures.chat_rooms")
 					.has-children
@@ -227,6 +233,15 @@ export default {
 		...mapGetters(['hasPermission', 'isAdminMode']),
 		commonAccountUrl() {
 			return window.eventyay?.commonAccountUrl || window.eventyay?.homeUrl || '/'
+		},
+		interpretationUrl() {
+			if (window.eventyay?.homeUrl) {
+				return window.eventyay.homeUrl + 'interpretation/'
+			}
+			return '#'
+		},
+		isInterpretationEnabled() {
+			return window.eventyay?.plugins?.includes('interpretation') || false
 		},
 		liveFeatures() {
 			return Object.assign({
