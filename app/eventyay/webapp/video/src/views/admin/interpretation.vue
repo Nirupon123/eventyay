@@ -24,7 +24,7 @@ function goBack() {
 		const baseUrl = new URL(iframeUrl.value, window.location.origin).pathname
 		
 		if (currentPath && currentPath !== baseUrl && currentPath + '/' !== baseUrl && currentPath !== baseUrl + '/') {
-			iframeWindow.location.href = iframeUrl.value
+			iframeWindow.history.back()
 		} else {
 			router.push({name: 'organizer'})
 		}

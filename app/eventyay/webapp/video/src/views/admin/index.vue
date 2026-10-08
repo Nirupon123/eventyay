@@ -215,7 +215,9 @@ export default {
 			return window.eventyay?.interpretationUrl || '#'
 		},
 		isInterpretationEnabled() {
-			return window.eventyay?.plugins?.some(p => p.includes('interpretation')) || false
+			const hasPlugin = window.eventyay?.plugins?.some(p => p.includes('interpretation')) || false
+			const hasValidUrl = window.eventyay?.interpretationUrl && window.eventyay.interpretationUrl !== '/missing-url-registration/'
+			return hasPlugin && hasValidUrl
 		},
 	},
 	methods: {
