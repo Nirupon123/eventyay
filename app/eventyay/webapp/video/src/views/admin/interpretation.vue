@@ -23,7 +23,7 @@ function goBack() {
 		const currentPath = iframeWindow.location.pathname
 		const baseUrl = new URL(iframeUrl.value, window.location.origin).pathname
 		
-		if (currentPath && currentPath !== baseUrl && currentPath + '/' !== baseUrl && currentPath !== baseUrl + '/') {
+		if (currentPath && currentPath !== baseUrl && currentPath + '/' !== baseUrl && currentPath !== baseUrl + '/' && iframeWindow.history.length > 1) {
 			iframeWindow.history.back()
 		} else {
 			router.push({name: 'organizer'})
