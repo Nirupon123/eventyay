@@ -279,6 +279,12 @@ export function checkRoutePermission(to) {
 			if (isChatRoom) return false
 		}
 	}
+	if (name === 'admin:interpretation') {
+		const hasPlugin = window.eventyay?.plugins?.some(p => p.includes('interpretation')) || false
+		const hasValidUrl = window.eventyay?.interpretationUrl && window.eventyay.interpretationUrl !== '/missing-url-registration/'
+		if (!hasPlugin || !hasValidUrl) return false
+		return isAdmin || hasPerm('world:update')
+	}
 	if (isAdmin) return true
 	if (name === 'admin:config') {
 		return hasPerm('world:update') || hasPerm('world:rooms.create.stage') || hasPerm('world:rooms.create.bbb')
