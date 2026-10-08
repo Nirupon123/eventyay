@@ -192,6 +192,11 @@ const routes = [
 				}]
 			},
 			{
+				path: 'event/interpretation',
+				name: 'admin:interpretation',
+				component: () => import('views/admin/interpretation')
+			},
+			{
 				path: 'event/kiosks',
 				name: 'admin:kiosks:index',
 				component: () => import('views/admin/kiosks/index')
