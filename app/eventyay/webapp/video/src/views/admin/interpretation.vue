@@ -8,13 +8,24 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
+const route = useRoute()
 const iframe = ref(null)
 
 const iframeUrl = computed(() => {
-	return window.eventyay?.interpretationUrl || ''
+        let url = window.eventyay?.interpretationUrl || ''
+        if (url) {
+                const queryStr = Object.keys(route.query).map(key => `${key}=${route.query[key]}`).join('&')
+                if (queryStr) {
+                        url += url.includes('?') ? `&${queryStr}` : `?${queryStr}`
+                }
+                if (route.hash) {
+                        url += route.hash
+                }
+        }
+        return url
 })
 
 function goBack() {
