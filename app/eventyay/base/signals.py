@@ -853,3 +853,23 @@ Sender is the ``Event`` instance. Kwargs are ``order`` and ``payment``.
 Receivers should return a ``PlatformFeePolicy`` or ``None`` when they do not
 provide a fee. Only one receiver may provide a policy.
 """
+
+legacy_billing_collection_disabled = django.dispatch.Signal()
+"""
+Sent to determine whether Core's legacy organizer billing collector is disabled.
+Receivers return ``True`` when another installed component owns organizer billing.
+Sender and the ``organizer`` keyword argument are the Organizer instance.
+"""
+
+
+def is_legacy_billing_collection_disabled(organizer) -> bool:
+    """Return whether an installed component has taken over organizer billing."""
+    for _receiver, response in legacy_billing_collection_disabled.send_robust(
+        sender=organizer,
+        organizer=organizer,
+    ):
+        if isinstance(response, Exception):
+            return True
+        if response is True:
+            return True
+    return False
