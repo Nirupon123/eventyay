@@ -42,7 +42,7 @@ def test_legacy_billing_fails_closed_when_provider_errors(
 
     assert is_legacy_billing_collection_disabled(MagicMock()) is True
     assert "Legacy billing ownership provider" in caplog.text
-    assert "provider unavailable" in caplog.text
+    assert isinstance(caplog.records[0].exc_info[1], RuntimeError)
 
 
 def test_monthly_billing_skips_externally_managed_organizer():

@@ -872,9 +872,9 @@ def is_legacy_billing_collection_disabled(organizer) -> bool:
     ):
         if isinstance(response, Exception):
             logger.error(
-                "Legacy billing ownership provider %s failed: %s",
+                "Legacy billing ownership provider %s failed",
                 getattr(receiver, "__qualname__", repr(receiver)),
-                response,
+                exc_info=response,
             )
             return True
         if response is True:
