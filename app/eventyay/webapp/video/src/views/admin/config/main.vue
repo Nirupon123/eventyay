@@ -256,7 +256,10 @@ async function fetchConfig() {
 			}
 		}
 		hlsConfig.value = data.video_player?.['hls.js'] ? JSON.stringify(data.video_player['hls.js'], null, 2) : ''
-		if (hasInterpretation.value && window.eventyay?.interpretationUrl) {
+		if (window.eventyay?.interpretation) {
+			config.value.interpretation.is_enabled = Boolean(window.eventyay.interpretation.isEnabled)
+			config.value.interpretation.use_plugin_streams = Boolean(window.eventyay.interpretation.usePluginStreams)
+		} else if (hasInterpretation.value && window.eventyay?.interpretationUrl) {
 			try {
 				const response = await fetch(window.eventyay.interpretationUrl, { credentials: 'same-origin' })
 				if (response.ok) {
@@ -337,25 +340,28 @@ async function save() {
 		}
 		const updated = await api.call('world.config.patch', patch)
 		if (hasInterpretation.value && window.eventyay?.interpretationUrl) {
-			try {
-				const csrfToken = document.cookie.split('; ').find(row => row.startsWith('eventyay_csrftoken='))?.split('=')[1] || window.eventyay?.csrfToken
-				const formData = new URLSearchParams()
-				if (csrfToken) formData.append('csrfmiddlewaretoken', csrfToken)
-				formData.append('interpretation_event_settings_save', '1')
-				if (config.value.interpretation.is_enabled) formData.append('interpretation-interpretation_is_enabled', 'on')
-				if (config.value.interpretation.use_plugin_streams) formData.append('interpretation-interpretation_use_plugin_streams', 'on')
-				
-				await fetch(window.eventyay.interpretationUrl, {
-					method: 'POST',
-					credentials: 'same-origin',
-					headers: {
-						'Content-Type': 'application/x-www-form-urlencoded',
-						...(csrfToken ? {'X-CSRFToken': csrfToken} : {})
-					},
-					body: formData.toString()
-				})
-			} catch (e) {
-				console.error('Failed to save interpretation settings', e)
+			const csrfToken = window.eventyay?.csrfToken || document.cookie.split('; ').find(row => row.startsWith('eventyay_csrftoken='))?.split('=')[1]
+			const formData = new URLSearchParams()
+			if (csrfToken) formData.append('csrfmiddlewaretoken', csrfToken)
+			formData.append('interpretation_event_settings_save', '1')
+			if (config.value.interpretation.is_enabled) formData.append('interpretation-interpretation_is_enabled', 'on')
+			if (config.value.interpretation.use_plugin_streams) formData.append('interpretation-interpretation_use_plugin_streams', 'on')
+			
+			const resp = await fetch(window.eventyay.interpretationUrl, {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+					...(csrfToken ? {'X-CSRFToken': csrfToken} : {})
+				},
+				body: formData.toString()
+			})
+			if (!resp.ok) {
+				throw new Error(`Failed to save interpretation settings: ${resp.status} ${resp.statusText}`)
+			}
+			if (window.eventyay?.interpretation) {
+				window.eventyay.interpretation.isEnabled = config.value.interpretation.is_enabled
+				window.eventyay.interpretation.usePluginStreams = config.value.interpretation.use_plugin_streams
 			}
 		}
 		if (store.state.world && patch.live_features) {

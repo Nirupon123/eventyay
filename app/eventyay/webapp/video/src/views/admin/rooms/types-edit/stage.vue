@@ -173,7 +173,9 @@
 			.info-alert(v-if="interpretationConfig.room_enabled")
 				i.mdi.mdi-information(aria-hidden="true")
 				span
-					| {{ $t('Note: To manage advanced settings like LLM choices, API key management, and streaming languages, visit the manage interpretation.') }}
+					| {{ $t('Note: To manage advanced settings like LLM choices, API key management, and streaming languages, visit the') }} 
+					router-link(:to="{ name: 'admin:interpretation' }") {{ $t('Interpretation settings page') }}
+					| .
 
 		.interpretation-plugin-language-streams(v-if="showPluginLanguageStreams && isInterpretationFeatureAvailable")
 			LanguageAudioSourceList(
@@ -252,22 +254,12 @@ export default defineComponent({
 	},
 	computed: {
 		interpretationSettingsUrl() {
-			const world = this.$store.state.world
-			let organizer = world?.organizer_slug || world?.organizer
-			let event = world?.slug || world?.id
-			
-			if (!organizer || organizer === 'default') {
-				const pathParts = window.location.pathname.split('/').filter(Boolean)
-				const eventIndex = pathParts.indexOf('event')
-				if (eventIndex !== -1 && pathParts.length > eventIndex + 2) {
-					organizer = pathParts[eventIndex + 1]
-					event = pathParts[eventIndex + 2]
-				} else if (pathParts.length >= 2) {
-					organizer = pathParts[0]
-					event = pathParts[1]
-				}
+			try {
+				const resolved = this.$router.resolve({ name: 'admin:interpretation' })
+				return resolved?.href || '/event/interpretation'
+			} catch (e) {
+				return '/event/interpretation'
 			}
-			return `/video/event/${organizer}/${event}/event/interpretation`
 		},
 		roomId() {
 			return this.config?.id ? String(this.config.id) : null

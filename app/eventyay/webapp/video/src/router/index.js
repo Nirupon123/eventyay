@@ -280,10 +280,9 @@ export function checkRoutePermission(to) {
 		}
 	}
 	if (name === 'admin:interpretation') {
-		const hasPlugin = window.eventyay?.plugins?.some(p => p.includes('interpretation')) || false
-		const hasValidUrl = window.eventyay?.interpretationUrl && window.eventyay.interpretationUrl !== '/missing-url-registration/'
-		if (!hasPlugin || !hasValidUrl) return false
-		return isAdmin || hasPerm('world:update')
+		if (!store.getters.isInterpretationEnabled) return false
+		const isOrganizer = Boolean(window.eventyay?.isOrganizerArea && window.eventyay?.hasOrganiserPermissions)
+		return isOrganizer || isAdmin || hasPerm('world:update')
 	}
 	if (isAdmin) return true
 	if (name === 'admin:config') {
