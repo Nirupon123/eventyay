@@ -32,13 +32,17 @@ def test_legacy_billing_can_be_disabled_by_provider(legacy_billing_signal):
     assert is_legacy_billing_collection_disabled(organizer) is True
 
 
-def test_legacy_billing_fails_closed_when_provider_errors(legacy_billing_signal):
+def test_legacy_billing_fails_closed_when_provider_errors(
+    legacy_billing_signal, caplog
+):
     def provider(sender, **kwargs):
         raise RuntimeError("provider unavailable")
 
     legacy_billing_signal.connect(provider)
 
     assert is_legacy_billing_collection_disabled(MagicMock()) is True
+    assert "Legacy billing ownership provider" in caplog.text
+    assert "provider unavailable" in caplog.text
 
 
 def test_monthly_billing_skips_externally_managed_organizer():

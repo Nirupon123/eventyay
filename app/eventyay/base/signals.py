@@ -1,4 +1,5 @@
 import functools
+import logging
 import warnings
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +13,7 @@ from .models import Event, GlobalPluginConfig
 
 
 app_cache = {}
+logger = logging.getLogger(__name__)
 
 
 def _populate_app_cache():
@@ -864,11 +866,16 @@ Sender and the ``organizer`` keyword argument are the Organizer instance.
 
 def is_legacy_billing_collection_disabled(organizer) -> bool:
     """Return whether an installed component has taken over organizer billing."""
-    for _receiver, response in legacy_billing_collection_disabled.send_robust(
+    for receiver, response in legacy_billing_collection_disabled.send_robust(
         sender=organizer,
         organizer=organizer,
     ):
         if isinstance(response, Exception):
+            logger.error(
+                "Legacy billing ownership provider %s failed: %s",
+                getattr(receiver, "__qualname__", repr(receiver)),
+                response,
+            )
             return True
         if response is True:
             return True
