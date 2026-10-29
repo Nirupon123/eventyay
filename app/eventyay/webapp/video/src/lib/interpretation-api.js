@@ -12,24 +12,111 @@ export function apiErrorDetail(data) {
 	return ''
 }
 
+const RESERVED_SLUGS = new Set([
+	'video',
+	'event',
+	'events',
+	'api',
+	'static',
+	'default',
+	'common',
+	'orga',
+	'control',
+	'admin',
+	'undefined',
+	'null'
+])
+
+function isValidSlug(val) {
+	return typeof val === 'string' && val.trim().length > 0 && !RESERVED_SLUGS.has(val.trim().toLowerCase())
+}
+
 export function interpretationRouting(store) {
-	const world = store?.state?.world
+	const world = store?.state?.world || store?.world
 	let organizer = world?.organizer_slug
 	let event = world?.slug || world?.id
-	if (!organizer || organizer === 'default') {
-		if (typeof window !== 'undefined') {
+
+	if (isValidSlug(organizer) && isValidSlug(event)) {
+		return { organizer: organizer.trim(), event: String(event).trim() }
+	}
+
+	if (typeof window !== 'undefined') {
+		const injected = window.eventyay || window.venueless
+		if (!isValidSlug(organizer)) {
+			organizer = injected?.organizerSlug || injected?.organizer_slug
+		}
+		if (!isValidSlug(event)) {
+			event = injected?.eventSlug || injected?.event_slug
+		}
+
+		// Check injected URLs (e.g., videoUrl, interpretationUrl, ticketUrl, basePath)
+		if (!isValidSlug(organizer) || !isValidSlug(event)) {
+			const candidateUrls = [
+				injected?.basePath,
+				injected?.videoUrl,
+				injected?.interpretationUrl,
+				injected?.ticketUrl,
+				injected?.talkUrl,
+				injected?.homeUrl,
+				injected?.publicVideoUrl
+			].filter(Boolean)
+
+			for (const u of candidateUrls) {
+				if (isValidSlug(organizer) && isValidSlug(event)) break
+				const parts = String(u).split('/').filter(Boolean)
+				if (parts[0] === 'video' && parts[1] === 'event' && parts.length >= 4) {
+					if (!isValidSlug(organizer)) organizer = parts[2]
+					if (!isValidSlug(event)) event = parts[3]
+				} else if (parts[0] === 'video' && parts[1] === 'plugins' && parts.length >= 4) {
+					if (!isValidSlug(organizer)) organizer = parts[2]
+					if (!isValidSlug(event)) event = parts[3]
+				} else if (parts[1] === 'event' && parts.length >= 4) {
+					if (!isValidSlug(organizer)) organizer = parts[2]
+					if (!isValidSlug(event)) event = parts[3]
+				} else if (parts.length >= 3 && parts[2] === 'video') {
+					if (!isValidSlug(organizer)) organizer = parts[0]
+					if (!isValidSlug(event)) event = parts[1]
+				}
+			}
+		}
+
+		// Fallback to window.location.pathname parsing
+		if (!isValidSlug(organizer) || !isValidSlug(event)) {
 			const pathParts = window.location.pathname.split('/').filter(Boolean)
-			if (pathParts.length >= 2) {
-				organizer = pathParts[0]
-				event = pathParts[1]
+			// Shape 1: /video/event/:organizer/:event/...
+			if (pathParts[0] === 'video' && pathParts[1] === 'event' && pathParts.length >= 4) {
+				if (!isValidSlug(organizer)) organizer = pathParts[2]
+				if (!isValidSlug(event)) event = pathParts[3]
+			}
+			// Shape 2: /:organizer/:event/video/...
+			else if (pathParts.length >= 3 && pathParts[2] === 'video') {
+				if (!isValidSlug(organizer)) organizer = pathParts[0]
+				if (!isValidSlug(event)) event = pathParts[1]
+			}
+			// Shape 3: /control/event/:organizer/:event/... or /orga/event/:organizer/:event/...
+			else if (pathParts[1] === 'event' && pathParts.length >= 4) {
+				if (!isValidSlug(organizer)) organizer = pathParts[2]
+				if (!isValidSlug(event)) event = pathParts[3]
+			}
+			// Shape 4: Generic /:organizer/:event/... (ensure neither is a reserved keyword)
+			else if (pathParts.length >= 2 && isValidSlug(pathParts[0]) && isValidSlug(pathParts[1])) {
+				if (!isValidSlug(organizer)) organizer = pathParts[0]
+				if (!isValidSlug(event)) event = pathParts[1]
 			}
 		}
 	}
-	return { organizer, event }
+
+	return {
+		organizer: isValidSlug(organizer) ? organizer.trim() : null,
+		event: isValidSlug(event) ? String(event).trim() : null,
+	}
 }
 
 export function interpretationApiUrl(store, roomId, suffix = 'config/') {
 	const { organizer, event } = interpretationRouting(store)
+	if (!organizer || !event || !roomId) {
+		return null
+	}
 	return `/api/v1/organizers/${organizer}/events/${event}/rooms/${roomId}/interpretation/${suffix}`
 }
 

@@ -137,7 +137,11 @@ export default {
 			deleting: false,
 			deleteError: null,
 			interpretationAdmin: {
-				usePluginStreams: false,
+				usePluginStreams: Boolean(
+					(typeof window !== 'undefined' && (window.eventyay?.interpretation?.usePluginStreams ?? window.venueless?.interpretation?.usePluginStreams)) ??
+					this.config?.interpretation_use_plugin_streams ??
+					false
+				),
 				languageStreams: [],
 				loaded: false,
 				streamsLoadFailed: false,
@@ -213,6 +217,22 @@ export default {
 			},
 		}
 	},
+	watch: {
+		'$store.state.world': {
+			handler(newWorld) {
+				if (newWorld && (!this.interpretationAdmin.loaded || this.interpretationAdmin.streamsLoadFailed)) {
+					this.loadInterpretationLanguageStreams()
+				}
+			}
+		},
+		'config.id': {
+			handler(newId) {
+				if (newId) {
+					this.loadInterpretationLanguageStreams()
+				}
+			}
+		}
+	},
 	methods: {
 		async loadInterpretationLanguageStreams() {
 			if (this.creating || !this.config?.id) return
@@ -222,21 +242,26 @@ export default {
 					this.$store,
 					this.config.id
 				)
-				this.interpretationAdmin.usePluginStreams = Boolean(
-					data.use_plugin_language_streams
-				)
-				this.config.interpretation_use_plugin_streams = this.interpretationAdmin.usePluginStreams
-				if (this.interpretationAdmin.usePluginStreams) {
-					this.interpretationAdmin.languageStreams = cloneLanguageStreamEntries(
-						data.language_streams
+				if (data && data.use_plugin_language_streams !== undefined) {
+					this.interpretationAdmin.usePluginStreams = Boolean(
+						data.use_plugin_language_streams
 					)
+					this.config.interpretation_use_plugin_streams = this.interpretationAdmin.usePluginStreams
+					if (this.interpretationAdmin.usePluginStreams) {
+						this.interpretationAdmin.languageStreams = cloneLanguageStreamEntries(
+							data.language_streams
+						)
+					}
 				}
 			} catch (error) {
 				console.warn('interpretation language streams unavailable', error)
 				this.interpretationAdmin.streamsLoadFailed = true
-				this.interpretationAdmin.usePluginStreams = Boolean(
-					this.config.interpretation_use_plugin_streams
+				const fallbackUseStreams = Boolean(
+					this.config.interpretation_use_plugin_streams ??
+					(typeof window !== 'undefined' && (window.eventyay?.interpretation?.usePluginStreams ?? window.venueless?.interpretation?.usePluginStreams)) ??
+					false
 				)
+				this.interpretationAdmin.usePluginStreams = fallbackUseStreams
 				this.interpretationAdmin.languageStreams = []
 			} finally {
 				this.interpretationAdmin.loaded = true

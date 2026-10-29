@@ -148,6 +148,15 @@
 				h3 {{ $t('Caption settings') }}
 			bunt-progress-circular(size="small")
 
+		.tool-section(v-if="!creating && showPluginLanguageStreams && syncStatus === 'error'")
+			.tool-section-header
+				h3 {{ $t('Caption settings') }}
+				p.subtitle {{ $t('Live translations and transcripts are provided by the eventyay-interpretation plugin.') }}
+			.interpretation-error-banner
+				i.mdi.mdi-alert-circle-outline(aria-hidden="true")
+				span.error-text {{ interpretationPutError || $t('Could not load interpretation settings. Please try again.') }}
+				bunt-button.btn-retry(@click="fetchInterpretationConfig(true)") {{ $t('Retry') }}
+
 		.tool-section(v-if="isInterpretationFeatureAvailable")
 			.tool-section-header
 				h3 {{ $t('Caption settings') }}
@@ -213,7 +222,7 @@
 import { defineComponent, reactive } from 'vue'
 import moment from 'moment-timezone'
 import api from 'lib/api'
-import { interpretationApiUrl, interpretationAuthHeaders } from 'lib/interpretation-api'
+import { interpretationRouting, interpretationApiUrl, interpretationAuthHeaders, apiErrorDetail } from 'lib/interpretation-api'
 import { logOperational } from 'lib/operationalLog'
 import { readApiErrorMessage } from 'lib/apiErrorMessage'
 import Prompt from 'components/Prompt'
@@ -275,7 +284,17 @@ export default defineComponent({
 			return inferPlaybackModeFromStreams(this.streams) === PLAYBACK_MODE_SCHEDULE_DRIVEN
 		},
 		showPluginLanguageStreams() {
-			return Boolean(this.config?.interpretation_use_plugin_streams)
+			if (this.config?.interpretation_use_plugin_streams !== undefined) {
+				return Boolean(this.config.interpretation_use_plugin_streams)
+			}
+			if (this.interpretationAdmin?.usePluginStreams !== undefined) {
+				return Boolean(this.interpretationAdmin.usePluginStreams)
+			}
+			const injected = typeof window !== 'undefined' ? (window.eventyay || window.venueless) : null
+			if (injected?.interpretation?.usePluginStreams !== undefined) {
+				return Boolean(injected.interpretation.usePluginStreams)
+			}
+			return false
 		},
 		isInterpretationFeatureAvailable() {
 			return !this.creating && this.syncStatus === 'ready'
@@ -299,10 +318,20 @@ export default defineComponent({
 			handler() {
 				this.fetchInterpretationConfig()
 			}
+		},
+		'$store.state.world': {
+			handler(newWorld) {
+				if (newWorld && (this.syncStatus === 'loading' || this.syncStatus === 'error' || !this._lastFetchRoomId)) {
+					this.fetchInterpretationConfig()
+					if (!this.streams || this.streams.length === 0) {
+						this.initStreams()
+					}
+				}
+			}
 		}
 	},
 	methods: {
-		async fetchInterpretationConfig() {
+		async fetchInterpretationConfig(force = false) {
 			if (this.creating) {
 				this.syncStatus = 'unsupported'
 				return
@@ -312,14 +341,20 @@ export default defineComponent({
 				this.syncStatus = 'unsupported'
 				return
 			}
-			if (!this.roomId || this._lastFetchRoomId === this.roomId) return
+			if (!this.roomId) return
+			if (!force && this._lastFetchRoomId === this.roomId && (this.syncStatus === 'ready' || this.syncStatus === 'unsupported')) return
 
 			const fetchingRoomId = this.roomId
+			const url = interpretationApiUrl(this.$store, fetchingRoomId, 'config/')
+			if (!url) {
+				// Routing parameters not yet available (e.g. store.state.world still connecting)
+				return
+			}
+
 			this.syncStatus = 'loading'
 			this.interpretationPutError = null
 
 			try {
-				const url = interpretationApiUrl(this.$store, fetchingRoomId, 'config/')
 				const headers = await interpretationAuthHeaders()
 				headers['Cache-Control'] = 'no-store'
 				const response = await fetch(url, {
@@ -329,7 +364,18 @@ export default defineComponent({
 
 				if (!response.ok) {
 					this._lastFetchRoomId = null
-					this.syncStatus = 'unsupported'
+					if (response.status === 404 || response.status === 403) {
+						this.syncStatus = 'unsupported'
+						return
+					}
+					const errData = await response.json().catch(() => ({}))
+					const detail = apiErrorDetail(errData) || readApiErrorMessage(errData) || response.statusText
+					if (response.status === 429) {
+						this.interpretationPutError = this.$t('Request throttled due to too many requests. Please wait a moment and click Retry.')
+					} else {
+						this.interpretationPutError = detail || this.$t('Could not load interpretation settings')
+					}
+					this.syncStatus = 'error'
 					return
 				}
 
@@ -356,7 +402,8 @@ export default defineComponent({
 			} catch (err) {
 				console.warn('Failed to fetch interpretation config:', err)
 				this._lastFetchRoomId = null
-				this.syncStatus = 'unsupported'
+				this.syncStatus = 'error'
+				this.interpretationPutError = err.message || this.$t('Network error while loading interpretation settings')
 			}
 		},
 		async saveInterpretationConfig(targetRoomId) {
@@ -578,16 +625,8 @@ export default defineComponent({
 			}
 		},
 		getApiBaseUrl(targetRoomId = this.roomId) {
-			const world = this.$store.state.world
-			let organizer = world?.organizer_slug
-			let event = world?.slug || world?.id
-			if (!organizer || organizer === 'default') {
-				const pathParts = window.location.pathname.split('/').filter(Boolean)
-				if (pathParts.length >= 2) {
-					organizer = pathParts[0]
-					event = pathParts[1]
-				}
-			}
+			const { organizer, event } = interpretationRouting(this.$store)
+			if (!organizer || !event || !targetRoomId) return null
 			return `/api/v1/organizers/${organizer}/events/${event}/rooms/${targetRoomId}/stream-schedules/`
 		},
 		getCsrfToken() {
@@ -597,6 +636,7 @@ export default defineComponent({
 		async fetchStreamSchedules() {
 			if (!this.roomId) return []
 			const url = this.getApiBaseUrl()
+			if (!url) return []
 			const authHeader = api._config.token
 				? `Bearer ${api._config.token}`
 				: api._config.clientId
@@ -835,6 +875,7 @@ export default defineComponent({
 			if (!roomId) return
 
 			const baseUrl = this.getApiBaseUrl(roomId)
+			if (!baseUrl) return
 			const authHeader = api._config.token
 				? `Bearer ${api._config.token}`
 				: api._config.clientId
@@ -1367,6 +1408,28 @@ export default defineComponent({
 				text-decoration: underline
 				&:hover
 					color: darken(#bb0011, 15%)
+
+		.interpretation-error-banner
+			display: flex
+			align-items: center
+			gap: 10px
+			margin-top: 12px
+			padding: 10px 14px
+			background-color: rgba($clr-danger, 0.08)
+			border-left: 3px solid $clr-danger
+			border-radius: 4px
+			color: $clr-danger
+			font-size: 13px
+			i
+				font-size: 18px
+				flex-shrink: 0
+			.error-text
+				flex: 1
+			.btn-retry
+				themed-button-secondary()
+				padding: 4px 12px
+				font-size: 12px
+				flex-shrink: 0
 	
 	.interpretation-plugin-language-streams
 		margin-top: 24px
