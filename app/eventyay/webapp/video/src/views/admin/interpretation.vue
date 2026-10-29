@@ -1,7 +1,6 @@
 <template lang="pug">
 .c-admin-interpretation
 	.ui-page-header
-		bunt-icon-button(@click="goBack", :tooltip="$t('Back to Overview')", tooltip-placement="bottom-start", :tooltip-fixed="true") arrow-left
 		h1 {{ $t('Interpretation') }}
 	bunt-progress-circular(size="huge", v-if="!isReady")
 	.unauthorized-notice(v-else-if="!hasAccess")
@@ -11,11 +10,10 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { interpretationRouting } from 'lib/interpretation-api'
 
-const router = useRouter()
 const route = useRoute()
 const store = useStore()
 const iframe = ref(null)
@@ -50,10 +48,6 @@ const iframeUrl = computed(() => {
 	}
 	return url
 })
-
-function goBack() {
-	router.push({ name: 'organizer' })
-}
 </script>
 
 <style scoped>
