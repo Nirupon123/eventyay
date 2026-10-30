@@ -276,6 +276,9 @@ export default defineComponent({
 			interpretationPutError: null,
 			_lastFetchRoomId: null,
 			_fetchInterpretationSeq: 0,
+			schedulesLoaded: false,
+			schedulesLoading: false,
+			_fetchSchedulesSeq: 0,
 		}
 	},
 	computed: {
@@ -352,10 +355,12 @@ export default defineComponent({
 		},
 		'$store.state.world': {
 			handler(newWorld) {
-				if (newWorld && (this.syncStatus === 'loading' || this.syncStatus === 'error' || !this._lastFetchRoomId)) {
-					this.fetchInterpretationConfig()
-					if (!this.streams || this.streams.length === 0) {
-						this.initStreams()
+				if (newWorld) {
+					if (this.syncStatus === 'loading' || this.syncStatus === 'error' || !this._lastFetchRoomId) {
+						this.fetchInterpretationConfig()
+					}
+					if (!this.schedulesLoaded || this.schedulesLoading) {
+						this.initStreams(true)
 					}
 				}
 			}
@@ -601,16 +606,36 @@ export default defineComponent({
 
 			return stream
 		},
-		async initStreams() {
+		async initStreams(force = false) {
 			if (!this.roomId) {
 				this.loadFromModuleConfig()
+				this.schedulesLoaded = true
 				return
 			}
+			if (!force && this.schedulesLoaded) return
+
+			const seq = ++this._fetchSchedulesSeq
 			this.loading = true
+			this.schedulesLoading = true
 			this.globalError = null
 			try {
 				const schedules = await this.fetchStreamSchedules()
-				if (schedules && schedules.length > 0) {
+				if (seq !== this._fetchSchedulesSeq) return
+
+				if (schedules === null) {
+					// Routing is unresolved (e.g. world still connecting)
+					if (this.$store.state.world) {
+						// World is loaded but routing still cannot resolve
+						this.loadFromModuleConfig()
+						this.schedulesLoaded = true
+						this.loading = false
+						this.schedulesLoading = false
+					}
+					// Keep loading true while waiting for world
+					return
+				}
+
+				if (schedules.length > 0) {
 					this.streams = schedules.map(s =>
 						this.createStreamItem({
 							id: s.id,
@@ -624,11 +649,17 @@ export default defineComponent({
 				} else {
 					this.loadFromModuleConfig()
 				}
+				this.schedulesLoaded = true
 			} catch (err) {
+				if (seq !== this._fetchSchedulesSeq) return
 				console.warn('Failed to load stream schedules, falling back to module config:', err)
 				this.loadFromModuleConfig()
+				this.schedulesLoaded = true
 			} finally {
-				this.loading = false
+				if (seq === this._fetchSchedulesSeq && this.schedulesLoaded) {
+					this.loading = false
+					this.schedulesLoading = false
+				}
 			}
 		},
 		loadFromModuleConfig() {
@@ -695,7 +726,7 @@ export default defineComponent({
 		async fetchStreamSchedules() {
 			if (!this.roomId) return []
 			const url = this.getApiBaseUrl()
-			if (!url) return []
+			if (!url) return null
 			const authHeader = api._config.token
 				? `Bearer ${api._config.token}`
 				: api._config.clientId
@@ -796,6 +827,11 @@ export default defineComponent({
 			this.validationErrors = {}
 			this.globalError = null
 			let isValid = true
+
+			if (this.schedulesLoading || (!this.creating && this.roomId && !this.schedulesLoaded)) {
+				this.globalError = this.$t('Stream schedules are still loading. Please wait.')
+				return false
+			}
 
 			this.streams.forEach((stream, index) => {
 				if (!stream.url || !stream.url.trim()) {

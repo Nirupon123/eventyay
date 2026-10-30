@@ -11,6 +11,9 @@ export async function fetchInterpretationLanguageStreams(store, roomId) {
 		headers: await interpretationAuthHeaders(),
 		credentials: 'include',
 	})
+	if (response.status === 404 || response.status === 403) {
+		return { unsupported: true, use_plugin_language_streams: false, language_streams: [] }
+	}
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok) {
 		logOperational({action: 'interpretation.config', outcome: 'failure', backend: 'interpretation', error_code: 'http_error', status: response.status})

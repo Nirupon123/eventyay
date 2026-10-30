@@ -146,6 +146,7 @@ export default {
 				loaded: false,
 				loading: false,
 				saving: false,
+				unsupported: false,
 				streamsLoadFailed: false,
 				reload: () => this.loadInterpretationLanguageStreams(),
 			},
@@ -216,12 +217,19 @@ export default {
 				this.interpretationAdmin?.usePluginStreams ||
 				this.config?.interpretation_use_plugin_streams
 			)
-			return Boolean(
+			const streamsPending = Boolean(
 				!this.creating &&
 				usesPluginStreams &&
 				this.config?.id &&
+				!this.interpretationAdmin?.unsupported &&
 				(this.interpretationAdmin?.loading || !this.interpretationAdmin?.loaded)
 			)
+			const settingsPending = Boolean(
+				!this.creating &&
+				this.config?.id &&
+				this.$refs.settings?.loading
+			)
+			return streamsPending || settingsPending
 		}
 	},
 	validations() {
@@ -263,7 +271,13 @@ export default {
 					targetRoomId
 				)
 				if (seq !== this._loadStreamsSeq || targetRoomId !== this.config?.id) return
-				if (data && data.use_plugin_language_streams !== undefined) {
+				if (data && data.unsupported) {
+					this.interpretationAdmin.unsupported = true
+					this.interpretationAdmin.usePluginStreams = false
+					this.interpretationAdmin.languageStreams = []
+					this.interpretationAdmin.streamsLoadFailed = false
+				} else if (data && data.use_plugin_language_streams !== undefined) {
+					this.interpretationAdmin.unsupported = false
 					this.interpretationAdmin.usePluginStreams = Boolean(
 						data.use_plugin_language_streams
 					)
@@ -302,18 +316,34 @@ export default {
 				return
 			}
 
+			const roomId = this.config?.id
+			const usesPluginStreams = Boolean(
+				this.interpretationAdmin?.usePluginStreams ||
+				this.config?.interpretation_use_plugin_streams
+			)
+			if (!this.creating && usesPluginStreams && roomId && !this.interpretationAdmin.unsupported) {
+				if (this.interpretationAdmin.loading || !this.interpretationAdmin.loaded) {
+					this.error = this.$t('Interpretation channels are still loading. Please wait before saving.')
+					return
+				}
+				if (this.interpretationAdmin.streamsLoadFailed) {
+					this.error = this.$t('Interpretation channels could not be loaded. Please retry loading channels before saving.')
+					return
+				}
+			}
+
 			this.$refs.settings?.beforeSave?.()
 			this.saving = true
 			this.interpretationAdmin.saving = true
 			try {
-				let roomId = this.config.id
-				if (this.creating && !this.config.id) {
-					({ room: roomId } = await this.$store.dispatch('createRoom', {
+				let saveRoomId = roomId
+				if (this.creating && !saveRoomId) {
+					({ room: saveRoomId } = await this.$store.dispatch('createRoom', {
 						name: this.config.name,
 						description: this.config.description,
 						modules: []
 					}))
-					this.config.id = roomId
+					this.config.id = saveRoomId
 				}
 				let moduleConfig = this.config.module_config || []
 				if (['channel-bbb', 'channel-jitsi'].includes(this.inferredType?.id)) {
@@ -322,7 +352,7 @@ export default {
 					)
 				}
 				const updated = await api.call('room.config.patch', {
-					room: roomId,
+					room: saveRoomId,
 					name: this.config.name,
 					description: this.config.description,
 					picture: this.config.picture,
@@ -334,38 +364,29 @@ export default {
 
 				if (openScheduleAfterCreate && streamScheduleDraft) {
 					try {
-						sessionStorage.setItem(`streamScheduleDraft:${roomId}`, JSON.stringify(streamScheduleDraft))
+						sessionStorage.setItem(`streamScheduleDraft:${saveRoomId}`, JSON.stringify(streamScheduleDraft))
 					} catch (e) {
 						console.warn('Failed to store streamScheduleDraft in sessionStorage:', e)
 					}
 				}
 
 				if (this.$refs.settings?.saveInterpretationConfig) {
-					await this.$refs.settings.saveInterpretationConfig(roomId)
+					await this.$refs.settings.saveInterpretationConfig(saveRoomId)
 				}
 
 				if (this.$refs.settings?.saveStreamSchedules) {
-					await this.$refs.settings.saveStreamSchedules(roomId)
+					await this.$refs.settings.saveStreamSchedules(saveRoomId)
 				}
 
-				const usesPluginStreams = Boolean(
-					this.interpretationAdmin?.usePluginStreams ||
-					this.config?.interpretation_use_plugin_streams
-				)
 				if (
 					!this.creating &&
 					usesPluginStreams &&
-					roomId
+					saveRoomId &&
+					!this.interpretationAdmin.unsupported
 				) {
-					if (this.interpretationAdmin.loading || !this.interpretationAdmin.loaded) {
-						throw new Error(this.$t('Interpretation channels are still loading. Please wait before saving.'))
-					}
-					if (this.interpretationAdmin.streamsLoadFailed) {
-						throw new Error(this.$t('Interpretation channels could not be loaded. Please retry loading channels before saving.'))
-					}
 					await saveInterpretationLanguageStreams(
 						this.$store,
-						roomId,
+						saveRoomId,
 						this.interpretationAdmin.languageStreams
 					)
 				}
@@ -376,7 +397,7 @@ export default {
 					const query = openScheduleAfterCreate ? { schedule: 'new' } : {}
 					this.$router.push({
 						name: routeName,
-						params: {roomId},
+						params: {roomId: saveRoomId},
 						query
 					})
 				}
