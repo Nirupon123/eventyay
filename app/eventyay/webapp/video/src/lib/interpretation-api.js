@@ -152,12 +152,6 @@ export async function fetchListenerToken(store, roomId) {
 		return null
 	}
 }
-	const { organizer, event } = interpretationRouting(store)
-	if (!organizer || !event || !roomId) {
-		return null
-	}
-	return `/api/v1/organizers/${organizer}/events/${event}/rooms/${roomId}/interpretation/${suffix}`
-}
 
 export async function interpretationAuthHeaders(json = false) {
 	let authHeader = null
