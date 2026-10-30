@@ -71,7 +71,7 @@
 								:error-message="deleteError"
 							) {{ $t('Delete this room') }}
 	.ui-form-actions
-		bunt-button.btn-save(@click="save", :loading="saving", :error="!!error") {{ creating ? $t('Create') : $t('Save') }}
+		bunt-button.btn-save(@click="save", :loading="saving", :disabled="isSaveDisabled", :error="!!error") {{ creating ? $t('Create') : $t('Save') }}
 		.errors {{ error || validationErrors.join(', ') }}
 </template>
 <script>
@@ -144,6 +144,8 @@ export default {
 				),
 				languageStreams: [],
 				loaded: false,
+				loading: false,
+				saving: false,
 				streamsLoadFailed: false,
 				reload: () => this.loadInterpretationLanguageStreams(),
 			},
@@ -208,6 +210,18 @@ export default {
 			set(value) {
 				this.config.description = value
 			}
+		},
+		isSaveDisabled() {
+			const usesPluginStreams = Boolean(
+				this.interpretationAdmin?.usePluginStreams ||
+				this.config?.interpretation_use_plugin_streams
+			)
+			return Boolean(
+				!this.creating &&
+				usesPluginStreams &&
+				this.config?.id &&
+				(this.interpretationAdmin?.loading || !this.interpretationAdmin?.loaded)
+			)
 		}
 	},
 	validations() {
@@ -240,6 +254,8 @@ export default {
 			if (this.creating || !this.config?.id) return
 			const seq = ++this._loadStreamsSeq
 			const targetRoomId = this.config.id
+			this.interpretationAdmin.loading = true
+			this.interpretationAdmin.loaded = false
 			this.interpretationAdmin.streamsLoadFailed = false
 			try {
 				const data = await fetchInterpretationLanguageStreams(
@@ -263,6 +279,7 @@ export default {
 				console.warn('interpretation language streams unavailable', error)
 				this.interpretationAdmin.streamsLoadFailed = true
 				const fallbackUseStreams = Boolean(
+					this.interpretationAdmin.usePluginStreams ??
 					this.config.interpretation_use_plugin_streams ??
 					(typeof window !== 'undefined' && (window.eventyay?.interpretation?.usePluginStreams ?? window.venueless?.interpretation?.usePluginStreams)) ??
 					false
@@ -271,6 +288,7 @@ export default {
 				this.interpretationAdmin.languageStreams = []
 			} finally {
 				if (seq === this._loadStreamsSeq && targetRoomId === this.config?.id) {
+					this.interpretationAdmin.loading = false
 					this.interpretationAdmin.loaded = true
 				}
 			}
@@ -286,6 +304,7 @@ export default {
 
 			this.$refs.settings?.beforeSave?.()
 			this.saving = true
+			this.interpretationAdmin.saving = true
 			try {
 				let roomId = this.config.id
 				if (this.creating && !this.config.id) {
@@ -329,12 +348,21 @@ export default {
 					await this.$refs.settings.saveStreamSchedules(roomId)
 				}
 
+				const usesPluginStreams = Boolean(
+					this.interpretationAdmin?.usePluginStreams ||
+					this.config?.interpretation_use_plugin_streams
+				)
 				if (
-					this.interpretationAdmin.usePluginStreams &&
-					roomId &&
-					this.interpretationAdmin.loaded &&
-					!this.interpretationAdmin.streamsLoadFailed
+					!this.creating &&
+					usesPluginStreams &&
+					roomId
 				) {
+					if (this.interpretationAdmin.loading || !this.interpretationAdmin.loaded) {
+						throw new Error(this.$t('Interpretation channels are still loading. Please wait before saving.'))
+					}
+					if (this.interpretationAdmin.streamsLoadFailed) {
+						throw new Error(this.$t('Interpretation channels could not be loaded. Please retry loading channels before saving.'))
+					}
 					await saveInterpretationLanguageStreams(
 						this.$store,
 						roomId,
@@ -342,6 +370,7 @@ export default {
 					)
 				}
 				this.saving = false
+				this.interpretationAdmin.saving = false
 				if (this.creating) {
 					const routeName = this.isChat ? 'admin:chat:item' : 'admin:rooms:item'
 					const query = openScheduleAfterCreate ? { schedule: 'new' } : {}
@@ -354,6 +383,7 @@ export default {
 			} catch (error) {
 				console.error(error)
 				this.saving = false
+				this.interpretationAdmin.saving = false
 				this.error = error.message || error
 			}
 		},

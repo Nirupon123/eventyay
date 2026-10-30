@@ -187,14 +187,29 @@
 					| .
 
 		.interpretation-plugin-language-streams(v-if="showPluginLanguageStreams && isInterpretationFeatureAvailable")
-			LanguageAudioSourceList(
-				v-if="interpretationConfig.room_enabled && interpretationConfig.interpreter === 'voxbento'"
-				:title="$t('Interpretation channels')"
-				:entries="pluginLanguageStreamEntries"
-				:roomId="roomId"
-				:settingsRoute="{ name: 'admin:interpretation', query: { room: roomId }, hash: '#room-' + roomId }"
-				:translationModelSetup="!!interpretationConfig.translation_model"
-			)
+			template(v-if="interpretationConfig.room_enabled && interpretationConfig.interpreter === 'voxbento'")
+				.tool-section.interpretation-channels-loading(v-if="isLanguageStreamsLoading")
+					.tool-section-header
+						h3 {{ $t('Interpretation channels') }}
+						p.subtitle {{ $t('Add multi-language audio or video interpretation channels for attendees.') }}
+					bunt-progress-circular(size="small")
+				.tool-section.interpretation-channels-error(v-else-if="isLanguageStreamsError")
+					.tool-section-header
+						h3 {{ $t('Interpretation channels') }}
+						p.subtitle {{ $t('Live translations and transcripts are provided by the eventyay-interpretation plugin.') }}
+					.interpretation-error-banner
+						i.mdi.mdi-alert-circle-outline(aria-hidden="true")
+						span.error-text {{ $t('Could not load interpretation channels. Please try again.') }}
+						bunt-button.btn-retry(@click="retryLanguageStreams") {{ $t('Retry') }}
+				LanguageAudioSourceList(
+					v-else-if="isLanguageStreamsReady"
+					:title="$t('Interpretation channels')"
+					:entries="pluginLanguageStreamEntries"
+					:roomId="roomId"
+					:settingsRoute="{ name: 'admin:interpretation', query: { room: roomId }, hash: '#room-' + roomId }"
+					:translationModelSetup="!!interpretationConfig.translation_model"
+					:disabled="isLanguageStreamsDisabled"
+				)
 			.tool-section.skeleton-provider-layout(v-else-if="interpretationConfig.room_enabled && interpretationConfig.interpreter && interpretationConfig.interpreter !== 'voxbento' && interpretationConfig.interpreter !== 'none'")
 				.tool-section-header
 					h3 {{ $t('Interpretation channels') }}
@@ -303,6 +318,21 @@ export default defineComponent({
 		pluginLanguageStreamEntries() {
 			return this.interpretationAdmin?.languageStreams ?? []
 		},
+		isLanguageStreamsLoading() {
+			if (!this.interpretationAdmin) return false
+			return Boolean(this.interpretationAdmin.loading || !this.interpretationAdmin.loaded)
+		},
+		isLanguageStreamsError() {
+			if (!this.interpretationAdmin) return false
+			return Boolean(this.interpretationAdmin.streamsLoadFailed && !this.interpretationAdmin.loading)
+		},
+		isLanguageStreamsReady() {
+			if (!this.interpretationAdmin) return true
+			return Boolean(this.interpretationAdmin.loaded && !this.interpretationAdmin.loading && !this.interpretationAdmin.streamsLoadFailed)
+		},
+		isLanguageStreamsDisabled() {
+			return Boolean(this.interpretationAdmin?.saving || this.isLanguageStreamsLoading)
+		},
 	},
 	created() {
 		this.initStreams()
@@ -332,6 +362,11 @@ export default defineComponent({
 		}
 	},
 	methods: {
+		retryLanguageStreams() {
+			if (this.interpretationAdmin?.reload) {
+				this.interpretationAdmin.reload()
+			}
+		},
 		async fetchInterpretationConfig(force = false) {
 			if (this.creating) {
 				this.syncStatus = 'unsupported'
