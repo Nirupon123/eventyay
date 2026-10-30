@@ -5,13 +5,7 @@ import { normalizeYoutubeVideoId, toYoutubeWatchUrl } from './validators.js'
 export async function fetchInterpretationLanguageStreams(store, roomId) {
 	const url = interpretationApiUrl(store, roomId, 'streams/')
 	if (!url) {
-		const injectedUseStreams = typeof window !== 'undefined'
-			? (window.eventyay?.interpretation?.usePluginStreams ?? window.venueless?.interpretation?.usePluginStreams)
-			: undefined
-		return {
-			use_plugin_language_streams: injectedUseStreams !== undefined ? Boolean(injectedUseStreams) : false,
-			language_streams: [],
-		}
+		throw new Error('Interpretation API route unavailable')
 	}
 	const response = await fetch(url, {
 		headers: await interpretationAuthHeaders(),

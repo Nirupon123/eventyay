@@ -224,7 +224,7 @@ import moment from 'moment-timezone'
 import api from 'lib/api'
 import { interpretationRouting, interpretationApiUrl, interpretationAuthHeaders, apiErrorDetail } from 'lib/interpretation-api'
 import { logOperational } from 'lib/operationalLog'
-import { readApiErrorMessage } from 'lib/apiErrorMessage'
+import { apiErrorMessage } from 'lib/apiErrorMessage'
 import Prompt from 'components/Prompt'
 import LanguageAudioSourceList from 'components/LanguageAudioSourceList'
 import mixin from './mixin'
@@ -260,6 +260,7 @@ export default defineComponent({
 			availableInterpreters: [],
 			interpretationPutError: null,
 			_lastFetchRoomId: null,
+			_fetchInterpretationSeq: 0,
 		}
 	},
 	computed: {
@@ -344,13 +345,24 @@ export default defineComponent({
 			if (!this.roomId) return
 			if (!force && this._lastFetchRoomId === this.roomId && (this.syncStatus === 'ready' || this.syncStatus === 'unsupported')) return
 
+			if (force && this.interpretationAdmin?.reload) {
+				this.interpretationAdmin.reload()
+			}
+
 			const fetchingRoomId = this.roomId
 			const url = interpretationApiUrl(this.$store, fetchingRoomId, 'config/')
 			if (!url) {
-				// Routing parameters not yet available (e.g. store.state.world still connecting)
+				if (this.$store.state.world) {
+					this._lastFetchRoomId = null
+					this.syncStatus = 'unsupported'
+				} else {
+					this.syncStatus = 'loading'
+					this.interpretationPutError = null
+				}
 				return
 			}
 
+			const fetchSeq = ++this._fetchInterpretationSeq
 			this.syncStatus = 'loading'
 			this.interpretationPutError = null
 
@@ -362,6 +374,8 @@ export default defineComponent({
 					credentials: 'include',
 				})
 
+				if (fetchSeq !== this._fetchInterpretationSeq) return
+
 				if (!response.ok) {
 					this._lastFetchRoomId = null
 					if (response.status === 404 || response.status === 403) {
@@ -369,7 +383,8 @@ export default defineComponent({
 						return
 					}
 					const errData = await response.json().catch(() => ({}))
-					const detail = apiErrorDetail(errData) || readApiErrorMessage(errData) || response.statusText
+					if (fetchSeq !== this._fetchInterpretationSeq) return
+					const detail = apiErrorDetail(errData) || apiErrorMessage(errData, '') || response.statusText
 					if (response.status === 429) {
 						this.interpretationPutError = this.$t('Request throttled due to too many requests. Please wait a moment and click Retry.')
 					} else {
@@ -379,13 +394,15 @@ export default defineComponent({
 					return
 				}
 
-				// discard response if the user navigated to a different room mid-flight
-				if (fetchingRoomId !== this.roomId) return
+				// discard response if stale or the user navigated to a different room mid-flight
+				if (fetchSeq !== this._fetchInterpretationSeq || fetchingRoomId !== this.roomId) return
 
 				// discard if plugin streams were disabled while the request was in-flight
 				if (!this.showPluginLanguageStreams) return
 
 				const data = await response.json()
+				if (fetchSeq !== this._fetchInterpretationSeq || fetchingRoomId !== this.roomId) return
+
 				if (data.ui_sync_supported) {
 					this.interpretationConfig = {
 						room_enabled: data.room_enabled,
@@ -395,11 +412,15 @@ export default defineComponent({
 					this.availableInterpreters = (data.available_interpreters || []).filter(p => p.id !== 'none' && p.configured && !p.is_disconnected)
 					this._lastFetchRoomId = fetchingRoomId
 					this.syncStatus = 'ready'
+					if (this.interpretationAdmin?.streamsLoadFailed && this.interpretationAdmin?.reload) {
+						this.interpretationAdmin.reload()
+					}
 				} else {
 					this._lastFetchRoomId = null
 					this.syncStatus = 'unsupported'
 				}
 			} catch (err) {
+				if (fetchSeq !== this._fetchInterpretationSeq) return
 				console.warn('Failed to fetch interpretation config:', err)
 				this._lastFetchRoomId = null
 				this.syncStatus = 'error'
@@ -414,6 +435,9 @@ export default defineComponent({
 
 			this.interpretationPutError = null
 			const url = interpretationApiUrl(this.$store, roomId, 'config/')
+			if (!url) {
+				throw new Error(this.$t('Could not save caption settings: event routing could not be determined'))
+			}
 			const headers = await interpretationAuthHeaders(true)
 			
 			const payload = {
@@ -875,7 +899,9 @@ export default defineComponent({
 			if (!roomId) return
 
 			const baseUrl = this.getApiBaseUrl(roomId)
-			if (!baseUrl) return
+			if (!baseUrl) {
+				throw new Error(this.$t('Could not save stream schedules: event routing could not be determined'))
+			}
 			const authHeader = api._config.token
 				? `Bearer ${api._config.token}`
 				: api._config.clientId

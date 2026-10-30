@@ -145,6 +145,7 @@ export default {
 				languageStreams: [],
 				loaded: false,
 				streamsLoadFailed: false,
+				reload: () => this.loadInterpretationLanguageStreams(),
 			},
 		}
 	},
