@@ -147,6 +147,7 @@ export default {
 				streamsLoadFailed: false,
 				reload: () => this.loadInterpretationLanguageStreams(),
 			},
+			_loadStreamsSeq: 0,
 		}
 	},
 	async created() {
@@ -237,12 +238,15 @@ export default {
 	methods: {
 		async loadInterpretationLanguageStreams() {
 			if (this.creating || !this.config?.id) return
+			const seq = ++this._loadStreamsSeq
+			const targetRoomId = this.config.id
 			this.interpretationAdmin.streamsLoadFailed = false
 			try {
 				const data = await fetchInterpretationLanguageStreams(
 					this.$store,
-					this.config.id
+					targetRoomId
 				)
+				if (seq !== this._loadStreamsSeq || targetRoomId !== this.config?.id) return
 				if (data && data.use_plugin_language_streams !== undefined) {
 					this.interpretationAdmin.usePluginStreams = Boolean(
 						data.use_plugin_language_streams
@@ -255,6 +259,7 @@ export default {
 					}
 				}
 			} catch (error) {
+				if (seq !== this._loadStreamsSeq || targetRoomId !== this.config?.id) return
 				console.warn('interpretation language streams unavailable', error)
 				this.interpretationAdmin.streamsLoadFailed = true
 				const fallbackUseStreams = Boolean(
@@ -265,7 +270,9 @@ export default {
 				this.interpretationAdmin.usePluginStreams = fallbackUseStreams
 				this.interpretationAdmin.languageStreams = []
 			} finally {
-				this.interpretationAdmin.loaded = true
+				if (seq === this._loadStreamsSeq && targetRoomId === this.config?.id) {
+					this.interpretationAdmin.loaded = true
+				}
 			}
 		},
 		async save({ openScheduleAfterCreate = false, streamScheduleDraft = null } = {}) {
